@@ -1,0 +1,149 @@
+---
+- name: Create flavors
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: "Create 2C-4GB-40GB flavor"
+      os_nova_flavor:
+        cloud: "{{ openstack_cloud }}"
+        state: present
+        name: "2C-4GB-40GB"
+        ram: 4096
+        vcpus: 2
+        disk: 40
+        ephemeral: 0
+
+    - name: "Create 4C-8GB-40GB flavor"
+      os_nova_flavor:
+        cloud: "{{ openstack_cloud }}"
+        state: present
+        name: "4C-8GB-40GB"
+        ram: 8192
+        vcpus: 4
+        disk: 40
+        ephemeral: 0
+
+    - name: "Create 8C-32GB-40GB flavor"
+      os_nova_flavor:
+        cloud: "{{ openstack_cloud }}"
+        state: present
+        name: "8C-32GB-40GB"
+        ram: 32768
+        vcpus: 8
+        disk: 40
+        ephemeral: 0
+
+- name: Create project
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: Create project
+      os_project:
+        cloud: "{{ openstack_cloud }}"
+        state: present
+        name: "{{ gardener_project }}"
+        domain_id: "{{ gardener_domain }}"
+
+    - name: Create user
+      os_user:
+        cloud: "{{ openstack_cloud }}"
+        state: present
+        name: "{{ gardener_user }}"
+        password: "{{ gardener_password }}"
+        domain: "{{ gardener_domain }}"
+        default_project: "{{ gardener_project }}"
+      no_log: true
+
+    # NOTE: this role is required by octavia
+    - name: Create load-balancer_member role
+      os_keystone_role:
+        cloud: "{{ openstack_cloud }}"
+        state: present
+        name: load-balancer_member
+
+    - name: Add member roles to user
+      os_user_role:
+        cloud: "{{ openstack_cloud }}"
+        state: present
+        user: "{{ gardener_user }}"
+        role: "{{ item }}"
+        project: "{{ gardener_project }}"
+      loop:
+        - load-balancer_member
+        - member
+        - _member_
+
+- name: Create images
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: Download ubuntu 20.04 image
+      get_url:
+        url: https://images.osism.tech/mirror/ubuntu-20.04/20210803/focal-server-cloudimg-amd64.img
+        dest: /tmp/ubuntu.img
+
+    - name: Upload ubuntu 20.04 image
+      os_image:
+        cloud: "{{ openstack_cloud }}"
+        state: present
+        name: "Ubuntu 20.04 (20210803)"
+        container_format: bare
+        disk_format: qcow2
+        filename: /tmp/ubuntu.img
+        min_disk: 8
+        min_ram: 512
+        properties:
+          architecture: x86_64
+          cpu_arch: x86_64
+          distro: ubuntu
+          hw_disk_bus: scsi
+          hw_rng_model: virtio
+          hw_scsi_model: virtio-scsi
+          hypervisor_type: kvm
+          os_distro: ubuntu
+
+    # NOTE: is_public from os_image is not working like expected
+    - name: Make ubuntu 20.04 image visible
+      command: "openstack --os-cloud {{ openstack_cloud }} image set --public 'Ubuntu 20.04 (20210803)'"  # noqa 301
+
+    - name: Download garden linux image
+      get_url:
+        url: https://images.osism.tech/openstack-image-gardenlinux/gardenlinux-amd64.318.8.qcow2
+        dest: /tmp/garden.img
+
+    - name: Upload garden linxu image
+      os_image:
+        cloud: "{{ openstack_cloud }}"
+        state: present
+        name: "Garden Linux (318.8)"
+        container_format: bare
+        disk_format: qcow2
+        filename: /tmp/garden.img
+        min_disk: 8
+        min_ram: 512
+        properties:
+          architecture: x86_64
+          cpu_arch: x86_64
+          distro: ubuntu
+          hw_disk_bus: scsi
+          hw_rng_model: virtio
+          hw_scsi_model: virtio-scsi
+          hypervisor_type: kvm
+          os_distro: debian
+
+    # NOTE: is_public from os_image is not working like expected
+    - name: Make garden linux image visible
+      command: "openstack --os-cloud {{ openstack_cloud }} image set --public 'Garden Linux (318.8)'"  # noqa 301
+
+    - name: Remove file garden.img
+      ansible.builtin.file:
+        path: /tmp/garden.img
+        state: absent
+
+    - name: Remove file ubuntu.img
+      ansible.builtin.file:
+        path: /tmp/ubuntu.img
+        state: absent

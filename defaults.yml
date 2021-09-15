@@ -1,0 +1,7 @@
+---
+openstack_cloud: openstack
+
+gardener_domain: Default
+gardener_password: password
+gardener_project: gardener
+gardener_user: gardener
